@@ -1,0 +1,250 @@
+////////////////////////////////////////////////////////////////////////////////
+///
+///     @file       SkyFragment.h
+///     @author     User
+///     @date       
+///
+///     @brief      SkyFragmentShader
+///
+///     Copyright (c) 2008 Hello Games Ltd. All Rights Reserved.
+///
+////////////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------------
+//      Compilation defines 
+
+#define D_USE_NOISETEXTURE
+
+#ifdef D_PLATFORM_ORBIS
+#pragma argument(maxvgprcount=36) 
+#endif
+
+//-----------------------------------------------------------------------------
+//      Include files
+
+#include "Common/Defines.shader.h"
+#include "Common/CommonUniforms.shader.h"
+#include "UberCommon.h"
+
+#include "Common/Common.shader.h"
+#include "Common/CommonPlanet.shader.h"
+#include "Common/CommonScattering.shader.h"
+#include "Common/CommonNoise.shader.h"
+
+//-----------------------------------------------------------------------------
+//      Global Data
+
+
+//-----------------------------------------------------------------------------
+//      Typedefs and Classes 
+
+//-----------------------------------------------------------------------------
+///
+///     Input
+///
+///     @brief  Input
+///
+//-----------------------------------------------------------------------------
+DECLARE_INPUT
+    IN_SCREEN_POSITION
+    
+    INPUT( vec4, mWorldPositionVec4,        TEXCOORD0 )
+    INPUT( vec4, mLocalPositionVec4,        TEXCOORD1 )
+    INPUT( vec3, mSpaceCloudColourGCVec3,   TEXCOORD2 )
+    INPUT( vec3, mSunDirectionVec3,         TEXCOORD3 )
+    INPUT( vec2, mTexCoordsVec2,            TEXCOORD4 )
+
+DECLARE_END
+
+
+//-----------------------------------------------------------------------------
+//    Functions
+
+//-----------------------------------------------------------------------------
+///
+///     KalisetStars
+///
+///     @brief      KalisetStars
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+#ifdef D_LOWQUALITY
+
+float 
+KalisetStars(
+    vec3 lPositionVec3 )
+{
+    lPositionVec3 += vec3(1.35,1.54,1.23);
+    lPositionVec3 *= 0.3;
+    for (int i=0; i<9; i++)
+    {
+        lPositionVec3.xyz=abs(lPositionVec3.xyz);
+        lPositionVec3=lPositionVec3/dot(lPositionVec3,lPositionVec3);
+        lPositionVec3=lPositionVec3*1.-vec3(.9);
+    }	
+    return dot(lPositionVec3,lPositionVec3)*.003;
+}
+
+
+#else
+
+float 
+KalisetStars(
+    vec3 lPositionVec3 )
+{
+    lPositionVec3 += vec3(1.35,1.54,1.23);
+    lPositionVec3 *= 0.3;
+
+    for (int i=0; i<18; i++)
+    {
+        lPositionVec3.xyz=abs(lPositionVec3.xyz);
+        lPositionVec3=lPositionVec3/dot(lPositionVec3,lPositionVec3);
+        lPositionVec3=lPositionVec3*1.-vec3(.9);
+    }
+    
+    return pow(length(lPositionVec3),1.5)*.04;
+}
+#endif
+
+
+
+//-----------------------------------------------------------------------------
+///
+///     Main
+///
+///     @brief      Main Fragment
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+FRAGMENT_MAIN_COLOUR_SRT
+{
+    vec3 lInScatteringMieVec3;
+    vec3 lInScatteringRayleighVec3;
+
+    float lfStarDensity;
+    vec3   lSkyColourVec3 = vec3( 0.0 );
+
+    vec3  lLightPositionVec3 = lUniforms.mpCustomPerMaterial->gSunPositionVec4.xyz;
+
+    vec3  lViewPositionVec3 = vec3( 0.0 );
+    vec3  lWorldPositionVec3 = normalize( IN( mWorldPositionVec4 ).xyz - lUniforms.mpPerFrame->gViewPositionVec3 );
+
+    // Get params from uniforms
+    float lfAtmosphereSize = lUniforms.mpCustomPerMaterial->gScatteringParamsVec4.b;
+
+
+    vec3  lSunWavelengthVec3 = /*GammaCorrectInput*/( lUniforms.mpCommonPerMesh->gLightColourVec4.rgb );
+
+
+    vec3  lSpaceSkyColour1Vec3     = lUniforms.mpCustomPerMaterial->gSpaceSkyColour1Vec4.rgb;
+    vec3  lSpaceSkyColour2Vec3     = lUniforms.mpCustomPerMaterial->gSpaceSkyColour2Vec4.rgb;
+    vec3  lSpaceSkyColour3Vec3     = lUniforms.mpCustomPerMaterial->gSpaceSkyColour3Vec4.rgb;
+    vec3  lSpaceCloudColourVec3    = lUniforms.mpCustomPerMaterial->gSpaceCloudColourVec4.rgb;
+    vec3  lSpaceNebulaColour1Vec3  = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour1Vec4.rgb;
+    vec3  lSpaceNebulaColour2Vec3  = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour2Vec4.rgb;
+    vec3  lSpaceNebulaColour3Vec3  = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour3Vec4.rgb;
+    vec3  lSpaceNebulaColour4Vec3  = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour4Vec4.rgb;
+
+    float lfSpaceSunSize            = lUniforms.mpCustomPerMaterial->gSpaceSkyColour3Vec4.a;
+    float lfSpaceCenterPowerVec3    = lUniforms.mpCustomPerMaterial->gSpaceSkyColour2Vec4.a;
+
+    vec4 lFragmentColourVec4 = vec4( 1.0 );
+
+    lFragmentColourVec4.rgb = saturate( GetSpaceColour(
+        lWorldPositionVec3,
+        lViewPositionVec3,
+        lLightPositionVec3,
+        lSpaceSkyColour1Vec3,
+        lSpaceSkyColour2Vec3,
+        lSpaceSkyColour3Vec3,
+        lfSpaceCenterPowerVec3 ) );
+
+#ifdef D_LOWQUALITY
+    float lfLodBias = 2.0;
+#else
+    float lfLodBias = 0.0;
+#endif
+
+    vec3 lSunScatteringVec3 = InScatteringPhase(
+        vec3( 1.0 ),
+        vec3( 1.0 ),
+        1.0,
+        1.0,
+        MiePhase( lLightPositionVec3, lWorldPositionVec3, lfSpaceSunSize ) );
+    
+
+    {
+        float lfRandom          = lUniforms.mpCustomPerMaterial->gSpaceCloudColourVec4.a * 100.0f;
+        float lfScale1          = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour1Vec4.a;
+        float lfScale2          = lfScale1;
+        float lfCloudScale1     = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour3Vec4.a;
+        float lfCloudScale2     = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour4Vec4.a;
+        float lfCloudOffset     = lUniforms.mpCustomPerMaterial->gSpaceSkyColour1Vec4.a;
+        float lfNebulaOffset    = lUniforms.mpCustomPerMaterial->gSpaceNebulaColour2Vec4.a;
+        float lfCloudBrighten   = 25.0;
+
+        float lfShadowOffset      = lUniforms.mpCustomPerMaterial->gSpaceNebulaParamsVec4.r;
+        float lfNebulaSunStrength = lUniforms.mpCustomPerMaterial->gSpaceNebulaParamsVec4.g;
+        float lfHighlight         = lUniforms.mpCustomPerMaterial->gSpaceNebulaParamsVec4.b;
+
+        float lfNebulaLightMin       = lUniforms.mpCustomPerMaterial->gSpaceNormalParamsVec4.r;
+        float lfNebulaLightMax       = lUniforms.mpCustomPerMaterial->gSpaceNormalParamsVec4.g;
+        float lfNebulaNormalStrength = lUniforms.mpCustomPerMaterial->gSpaceNormalParamsVec4.b;
+        float lfNebulaLightStrength  = lUniforms.mpCustomPerMaterial->gSpaceNormalParamsVec4.a;
+
+        float lfNebula          = 0.0;
+        vec3  lNebulaColourVec3 = vec3(0.0);
+
+        float lfCloudNoise1 = clamp( FractBrownianMotion4( lWorldPositionVec3 * lfCloudScale1 + vec3( lfRandom ),           SAMPLER2DPARAM( lUniforms.mpCustomPerMaterial->gNoiseMap ) ) + lfCloudOffset, 0.0, 1.0 );
+        lFragmentColourVec4.rgb  = mix( lFragmentColourVec4.rgb, lSpaceCloudColourVec3, lfCloudNoise1 );
+        
+        if ( (lfCloudNoise1 + lfNebulaOffset ) > 0.0 && (lfNebulaOffset > -1.0) )
+        {
+            float lfCloudNoise2 = clamp( FractBrownianMotion4( lWorldPositionVec3 * lfCloudScale2 + vec3( lfRandom + 1000.0f ), SAMPLER2DPARAM( lUniforms.mpCustomPerMaterial->gNoiseMap ) ), 0.0, 1.0 );    
+            float lfNebulaNoise = max( (lfCloudNoise1 + lfNebulaOffset ) / (1.0 + lfNebulaOffset) * lfCloudNoise2, 0.0 ) * lfCloudBrighten;
+            if( lfNebulaNoise > 0.0 )
+            {
+                lfNebula        = DistortedNoise( lWorldPositionVec3 + vec3( lfRandom ),       lfScale1, lfScale2, SAMPLER2DPARAM( lUniforms.mpCustomPerMaterial->gNoiseMap ) );
+                float lfShadow  = DistortedNoise( lWorldPositionVec3 * lfShadowOffset + vec3( lfRandom ), lfScale1, lfScale2, SAMPLER2DPARAM( lUniforms.mpCustomPerMaterial->gNoiseMap ) );
+                lfNebula        = lfNebula * lfNebula * lfNebula * lfNebula * lfNebula;
+                lfShadow        = lfShadow * lfShadow * lfShadow;
+
+                lfNebula        = saturate( lfNebula );
+                lfShadow        = saturate( lfShadow );
+                               
+                lfNebula        *= lfNebulaNoise;
+                lfShadow        *= lfNebulaNoise;
+
+                float lfBlend1          = 0.175;
+                float lfBlend2          = 0.25;
+                float lfBlend3          = 1.0 - lfHighlight;
+                float lfBlend4          = 1.0;
+                float lfNoiseBlend1    = clamp( ( lfNebula - lfBlend1 ) / ( lfBlend2 - lfBlend1 ), 0.0, 1.0 );
+                float lfNoiseBlend2    = clamp( ( lfNebula - lfBlend3 ) / ( lfBlend4 - lfBlend3 ), 0.0, 1.0 );
+                lNebulaColourVec3      = mix( lSpaceNebulaColour2Vec3, lSpaceNebulaColour3Vec3, lfNoiseBlend2 );
+                lNebulaColourVec3      = mix( lSpaceNebulaColour1Vec3, lNebulaColourVec3, lfNoiseBlend1 );
+
+                lFragmentColourVec4.rgb -= lfShadow * lSpaceNebulaColour4Vec3;
+                lFragmentColourVec4.rgb += lfNebula * lNebulaColourVec3;
+
+                float lfDifference       = ( lfNebula - lfShadow );//clamp(  / ( lfNebula + 0.0001 ), -1.0, 1.0 );
+                vec3  lLightNormal       = normalize( lWorldPositionVec3 - lLightPositionVec3 );
+                vec3  lNormal            = normalize( lLightNormal + lWorldPositionVec3 * lfDifference  * lfNebulaNormalStrength );
+            }
+        }   
+        vec3 lSunScattering2Vec3 = vec3( MiePhase( lLightPositionVec3, lWorldPositionVec3, 0.9 ) * 0.2 );
+        lFragmentColourVec4.rgb += ( ( lSpaceCloudColourVec3 * lfCloudNoise1 ) + ( lfNebula * lNebulaColourVec3 ) ) * lSunScattering2Vec3; 
+    }
+
+    lFragmentColourVec4.rgb += lSunScatteringVec3;
+
+    FRAGMENT_COLOUR = lFragmentColourVec4;
+}
+
+
+
+

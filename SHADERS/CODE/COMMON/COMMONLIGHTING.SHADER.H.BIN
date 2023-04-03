@@ -1,0 +1,792 @@
+////////////////////////////////////////////////////////////////////////////////
+///
+///     @file       CommonLighting.h
+///     @author     User
+///     @date       
+///
+///     @brief      CommonLighting
+///
+///     Copyright (c) 2008 Hello Games Ltd. All Rights Reserved.
+///
+////////////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------------
+//      Compilation defines 
+
+#ifndef D_COMMONLIGHTING_H
+#define D_COMMONLIGHTING_H
+
+//-----------------------------------------------------------------------------
+//      Include files
+
+#include "common/Defines.shader.h"
+#include "Common/Common.shader.h"
+#include "Common/CommonDepth.shader.h"
+#include "Common/CommonPlanet.shader.h"
+#include "Common/CommonUniforms.shader.h"
+#include "Common/CommonFragment.shader.h"
+#include "Common/CommonGBuffer.shader.h"
+
+//-----------------------------------------------------------------------------
+//      Global Data
+
+ STATIC_CONST float kfSHCubemapBrightnessScale = 0.45;
+ STATIC_CONST float kfMaxShadowIntensity       = 0.5;
+
+ STATIC_CONST vec4 kShadowPoissonTapsVec4[] =
+ {
+	vec4( 0.000000f, 0.000000f, 0.0f, 0.0f ),
+	vec4( 0.527837f,-0.085868f, 0.0f, 0.0f ),
+	vec4(-0.040088f, 0.536087f, 0.0f, 0.0f ),
+	vec4(-0.670445f,-0.179949f, 0.0f, 0.0f ),
+	vec4(-0.419418f,-0.616039f, 0.0f, 0.0f ),
+	vec4( 0.440453f,-0.639399f, 0.0f, 0.0f ),
+	vec4(-0.757088f, 0.349334f, 0.0f, 0.0f ),
+	vec4( 0.574619f, 0.685879f, 0.0f, 0.0f )
+} ;
+
+#define D_NUMBER_OF_CASCADES (3.0)
+#define D_CASCADE_SIZE (1.0 / D_NUMBER_OF_CASCADES)
+
+#define D_INSIDE_SM_BOUNDS1( V, TEXEL_SIZE ) ( ( max(V.x,V.y) < (1.0-(TEXEL_SIZE*1.0)) ) && ( min(V.x,V.y) > (TEXEL_SIZE*1.0) ) && ( V.z < 1.0 ) && ( V.z >= 0.0 )  )
+#define D_INSIDE_SM_BOUNDS2( V, TEXEL_SIZE ) ( ( max(V.x,V.y) < (1.0-(TEXEL_SIZE*1.0)) ) && ( min(V.x,V.y) > (TEXEL_SIZE*1.0) ) && ( V.z < 1.0 ) && ( V.z >= 0.0 )  )
+#define D_INSIDE_SM_BOUNDS3( V, TEXEL_SIZE ) ( ( max(V.x,V.y) < (1.0-(TEXEL_SIZE*1.0)) ) && ( min(V.x,V.y) > (TEXEL_SIZE*1.0) ) && ( V.z < 1.0 ) && ( V.z >= 0.0 ) )
+
+//-----------------------------------------------------------------------------
+//      Typedefs and Classes 
+
+
+//-----------------------------------------------------------------------------
+//    Functions
+
+//-----------------------------------------------------------------------------
+///
+///     PCF
+///
+///     @brief      PCF
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+float
+PCF(
+    CustomPerMaterialUniforms lPerMaterialUniforms,
+    CommonPerMeshUniforms   lUniforms,
+    vec3                    lTexCoordVec3,
+    in vec2                 lScreenPositionVec2,
+    in vec4                 lShadowMapSize,
+    in float                lfFilterRadius,
+    bool                    lbHQ )
+{
+	float shadow = shadow2D( lPerMaterialUniforms.gShadowMap, lTexCoordVec3 ).x;
+    vec3 lTexOffsetCoordVec3 = lTexCoordVec3;
+
+	const float offsetx = lfFilterRadius * (lShadowMapSize.z / D_NUMBER_OF_CASCADES);
+    const float offsety = lfFilterRadius * (lShadowMapSize.w);
+
+    lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2( -1.0 * offsetx, 0.0 );
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2(  1.0 * offsetx, 0.0 );
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2(  0.0, -1.0 * offsety );
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2(  0.0,  1.0 * offsety );
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    if (!lbHQ)
+    {
+         return shadow * (1.0/5.0);
+    } else
+    {
+        // weight corner samples to give a disc shape to the PCF filter
+        lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2( -1.0 * offsetx, -1.0 * offsety );
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        
+        lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2( -1.0 * offsetx,  1.0 * offsety );
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        
+        lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2(  1.0 * offsetx, -1.0 * offsety );
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        
+        lTexOffsetCoordVec3.xy = lTexCoordVec3.xy + vec2(  1.0 * offsetx,  1.0 * offsety );
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        return shadow * (1.0/7.0);
+    }    
+}
+
+//-----------------------------------------------------------------------------
+///
+///     PCF
+///
+///     @brief      PCF
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+float
+PCF_RPDB(
+    CustomPerMaterialUniforms lPerMaterialUniforms,
+    CommonPerMeshUniforms   lUniforms,
+    vec3                    lTexCoordVec3,
+    in vec2                 lReceiverPlaneDepthBiasVec2,
+    in vec4                 lShadowMapSize,
+    in float                lfFilterRadius,
+    bool                    lbHQ )    
+{
+    vec3 lTexOffsetCoordVec3;
+
+	const float offsetx = lfFilterRadius * (lShadowMapSize.z / D_NUMBER_OF_CASCADES);
+    const float offsety = lfFilterRadius * (lShadowMapSize.w);
+
+    lTexOffsetCoordVec3.xy =  vec2( 0.0,            0.0 );
+    lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+    lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+
+	float shadow = shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+
+    lTexOffsetCoordVec3.xy =  vec2( -1.0 * offsetx, 0.0 );
+    lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+    lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    lTexOffsetCoordVec3.xy =  vec2(  1.0 * offsetx, 0.0 );
+    lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+    lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    lTexOffsetCoordVec3.xy =  vec2(  0.0, -1.0 * offsety );
+    lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+    lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    lTexOffsetCoordVec3.xy =  vec2(  0.0,  1.0 * offsety );
+    lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+    lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+    shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x;
+    
+    if (!lbHQ)
+    {
+         return shadow * (1.0/5.0);
+    } else
+    {
+        // weight corner samples to give a disc shape to the PCF filter
+        lTexOffsetCoordVec3.xy =  vec2( -1.0 * offsetx, -1.0 * offsety );
+        lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+        lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;        
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        
+        lTexOffsetCoordVec3.xy =  vec2( -1.0 * offsetx,  1.0 * offsety );
+        lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+        lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+        
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        
+        lTexOffsetCoordVec3.xy =  vec2(  1.0 * offsetx, -1.0 * offsety );
+        lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+        lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+        
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        
+        lTexOffsetCoordVec3.xy =  vec2(  1.0 * offsetx,  1.0 * offsety );
+        lTexOffsetCoordVec3.z  =  clamp(lTexCoordVec3.z + dot(lTexOffsetCoordVec3.xy, lReceiverPlaneDepthBiasVec2), 0.0, 1.0);
+        lTexOffsetCoordVec3.xy += lTexCoordVec3.xy;
+        
+        shadow += shadow2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3 ).x*0.5;
+        return shadow * (1.0/7.0);
+    }    
+}
+
+
+//-----------------------------------------------------------------------------
+///
+///     PCF
+///
+///     @brief      PCF_RPDB
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+
+#if 0
+
+// This method is used in the Witness
+
+float 
+SampleShadowMap_RPDB( CustomPerMaterialUniforms lPerMaterialUniforms, in float2 base_uv, in float u, in float v, in vec2 shadowMapSizeInv, in float depth, in vec2 receiverPlaneDepthBias) 
+{
+    vec2 uv = base_uv + vec2(u, v) * shadowMapSizeInv;
+    float z = depth + dot(vec2(u, v) * shadowMapSizeInv, receiverPlaneDepthBias);    
+    z =  max(z, 0.0f);  
+    uv.x = (uv.x * D_CASCADE_SIZE);
+    return shadow2D( lPerMaterialUniforms.gShadowMap, vec3(uv, z) );
+}
+
+float
+PCF_RPDB2(
+    CustomPerMaterialUniforms lPerMaterialUniforms,
+    CommonPerMeshUniforms   lUniforms,
+    vec3                    lTexCoordVec3,
+    in vec2                 lReceiverPlaneDepthBiasVec2,
+    in vec4                 lShadowMapSize,
+    in float                lfFilterRadius )
+{   
+    vec2 base_uv;
+    vec2 uv;
+    uv.x = lTexCoordVec3.x * lShadowMapSize.x;
+    uv.y = lTexCoordVec3.y * lShadowMapSize.y;
+
+    vec2 shadowMapSizeInv;
+    shadowMapSizeInv.x = lShadowMapSize.z;
+    shadowMapSizeInv.y = lShadowMapSize.w;
+    base_uv.x = floor(uv.x + 0.5);
+    base_uv.y = floor(uv.y + 0.5);
+    float s = (uv.x + 0.5 - base_uv.x);
+    float t = (uv.y + 0.5 - base_uv.y);
+    base_uv -= float2(0.5, 0.5);
+    base_uv *= shadowMapSizeInv;
+
+    float sum = 0;
+
+    float uw0 = (4 - 3 * s);
+    float uw1 = 7;
+    float uw2 = (1 + 3 * s);
+
+    float u0 = (3 - 2 * s) / uw0 - 2;
+    float u1 = (3 + s) / uw1;
+    float u2 = s / uw2 + 2;
+
+    float vw0 = (4 - 3 * t);
+    float vw1 = 7;
+    float vw2 = (1 + 3 * t);
+
+    float v0 = (3 - 2 * t) / vw0 - 2;
+    float v1 = (3 + t) / vw1;
+    float v2 = t / vw2 + 2;
+    
+    float lightDepth = lTexCoordVec3.z;
+
+    sum += uw0 * vw0 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u0, v0, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+    sum += uw1 * vw0 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u1, v0, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+    sum += uw2 * vw0 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u2, v0, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+
+    sum += uw0 * vw1 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u0, v1, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+    sum += uw1 * vw1 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u1, v1, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+    sum += uw2 * vw1 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u2, v1, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+
+    sum += uw0 * vw2 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u0, v2, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+    sum += uw1 * vw2 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u1, v2, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+    sum += uw2 * vw2 * SampleShadowMap_RPDB(lPerMaterialUniforms, base_uv, u2, v2, shadowMapSizeInv, lightDepth, lReceiverPlaneDepthBiasVec2);
+
+    return sum * 1.0f / 144;    
+}
+
+#endif
+
+//-----------------------------------------------------------------------------
+///
+///     PCF
+///
+///     @brief      PCF_Poisson
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+#if 0
+float
+PCF_Poisson(
+    CustomPerMaterialUniforms lPerMaterialUniforms,
+    CommonPerMeshUniforms   lUniforms,
+    vec3                    lTexCoordVec3,
+    in vec2                 lScreenPositionVec2,
+    in vec4                 lShadowMapSize,
+    bool                    lbHQ )
+{
+    vec3 lTexOffsetCoordVec3;
+    float shadow;
+	const float offsetx = lShadowMapSize.z / D_NUMBER_OF_CASCADES;
+    const float offsety = lShadowMapSize.w;
+    
+    {
+        vec2 rand;
+        rand.x = fract(sin(dot(lScreenPositionVec2, vec2(12.9898, 78.233)))* 43758.5453);
+        rand.y = fract(cos(mod(123456789.0, 1e-7 + 256. * dot(vec2(23.1406926327792690, 2.6651441426902251), lScreenPositionVec2))));
+    	rand  *= 6.28318530718;
+    	vec2 angleCosSin;
+    	angleCosSin.x = cos(rand.x);
+    	angleCosSin.y = sin(rand.y);
+    	vec4 rotScale;
+    	rotScale.x =  angleCosSin.x;
+    	rotScale.y =  angleCosSin.y;
+    	rotScale.z = -angleCosSin.y;
+    	rotScale.w =  angleCosSin.x;
+        				
+    	vec2 radiusScale = vec2(offsetx,offsety) * 1.0;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[0].x * rotScale.xy) + (kShadowPoissonTapsVec4[0].y * rotScale.zw) ) * radiusScale;	
+    	shadow  =  lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[1].x * rotScale.xy) + (kShadowPoissonTapsVec4[1].y * rotScale.zw) ) * radiusScale;	
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[2].x * rotScale.xy) + (kShadowPoissonTapsVec4[2].y * rotScale.zw) ) * radiusScale;	
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[3].x * rotScale.xy) + (kShadowPoissonTapsVec4[3].y * rotScale.zw) ) * radiusScale;	
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[4].x * rotScale.xy) + (kShadowPoissonTapsVec4[4].y * rotScale.zw) ) * radiusScale;
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[5].x * rotScale.xy) + (kShadowPoissonTapsVec4[5].y * rotScale.zw) ) * radiusScale;
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[6].x * rotScale.xy) + (kShadowPoissonTapsVec4[6].y * rotScale.zw) ) * radiusScale;
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;
+    	lTexOffsetCoordVec3 = lTexCoordVec3; 
+    	lTexOffsetCoordVec3.xy += ((kShadowPoissonTapsVec4[7].x * rotScale.xy) + (kShadowPoissonTapsVec4[7].y * rotScale.zw) ) * radiusScale;
+    	shadow  += lTexOffsetCoordVec3.z < texture2D( lPerMaterialUniforms.gShadowMap, lTexOffsetCoordVec3.xy ) ;        
+        
+        return shadow * (1.0/8.0);
+    }    
+}
+#endif
+
+//-----------------------------------------------------------------------------
+///
+///     ComputeShadowIntensity
+///
+///     @brief      ComputeShadowIntensity
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+
+vec2 ComputeReceiverPlaneDepthBias(vec3 texCoordDX, vec3 texCoordDY)
+{
+    vec2 biasUV;
+    biasUV.x = texCoordDY.y * texCoordDX.z - texCoordDX.y * texCoordDY.z;
+    biasUV.y = texCoordDX.x * texCoordDY.z - texCoordDY.x * texCoordDX.z;
+    float Det =(texCoordDX.x * texCoordDY.y) - (texCoordDX.y * texCoordDY.x);
+    biasUV *= 1.0f / ( sign(Det) * max( abs(Det), 1e-8 ) );
+    return biasUV;
+}
+
+float
+ComputeShadowIntensity(
+    CustomPerMaterialUniforms   lPerMaterialUniforms,
+    PerFrameUniforms            lRenderTargetUniforms,
+    CommonPerMeshUniforms       lUniforms,
+    in vec3                     lPositionVec3,
+    in vec3                     lNormalVec3,
+    in vec2                     lScreenPositionVec2,
+    in bool                     lbHQ )
+{
+    vec3   lProjectedPos;
+    float lfDepth = 1.0;
+    float lfTexelSize = lRenderTargetUniforms.gShadowSizeVec4.w; // 1.0 / lRenderTargetUniforms.gShadowSizeVec4.y;
+    float lfFilterRadius = 1.0;
+    float lfCascade = 0.0;
+    lProjectedPos = MUL( lUniforms.gaShadowMat4[ 0 ], vec4( lPositionVec3, 1.0 ) ).xyz;
+    
+    // Check if you are outside the high detail shadow cascade
+    if( !D_INSIDE_SM_BOUNDS1( ( lProjectedPos.xyz ), lfTexelSize ) ) 
+    {
+        lProjectedPos = MUL( lUniforms.gaShadowMat4[ 1 ], vec4( lPositionVec3, 1.0 ) ).xyz;		
+
+        if (!D_INSIDE_SM_BOUNDS2( (lProjectedPos.xyz), lfTexelSize) )
+        {
+            lProjectedPos = MUL( lUniforms.gaShadowMat4[ 2 ], vec4(lPositionVec3, 1.0) ).xyz;
+
+            if (!D_INSIDE_SM_BOUNDS3( (lProjectedPos.xyz), lfTexelSize) )
+            {
+                // outside all cascades
+                return 1.0;
+            }
+            else
+            {   // inside cascade 2
+                lfCascade = 2.0;
+                lfFilterRadius = 0.5;
+            }
+        }
+        else
+        {   
+            // inside cascade 1
+            lfCascade = 1.0;
+            lfFilterRadius = 0.75;
+        }
+    }
+    //inside cascade 0 (or cascade 1,2 fall through)  
+
+#if 1  
+     vec3 lShadowPosDDXVec3 = ddx_fine(lProjectedPos);
+     vec3 lShadowPosDDYVec3 = ddy_fine(lProjectedPos);          
+     vec2 lTexelSizeVec2;
+     lTexelSizeVec2.x = lRenderTargetUniforms.gShadowSizeVec4.z; // * D_CASCADE_SIZE;
+     lTexelSizeVec2.y = lRenderTargetUniforms.gShadowSizeVec4.w;
+     
+     vec2 lReceiverPlaneDepthBiasVec2 = ComputeReceiverPlaneDepthBias(lShadowPosDDXVec3, lShadowPosDDYVec3);
+     lReceiverPlaneDepthBiasVec2 *= lTexelSizeVec2;
+     // Static depth biasing to make up for incorrect fractional sampling on the shadow map grid
+     float fractionalSamplingError = dot(vec2(1.0, 1.0), abs(lReceiverPlaneDepthBiasVec2));
+     lProjectedPos.z -= clamp(fractionalSamplingError, -0.01, 0.01);    
+     //lProjectedPos.z = max(lProjectedPos.z,0.0f);
+     lProjectedPos.x += lfCascade;
+     lProjectedPos.x = (lProjectedPos.x * D_CASCADE_SIZE);            
+     return PCF_RPDB( lPerMaterialUniforms, lUniforms, lProjectedPos, lReceiverPlaneDepthBiasVec2, lRenderTargetUniforms.gShadowSizeVec4, lfFilterRadius,lbHQ );
+
+#elif 0
+    
+    // Original basic PCF
+    
+    lProjectedPos.x = (lProjectedPos.x * D_CASCADE_SIZE);
+    return PCF( lPerMaterialUniforms, lUniforms, lProjectedPos, lScreenPositionVec2, lRenderTargetUniforms.gShadowSizeVec4, lfFilterRadius, lbHQ );
+
+#else
+    // The witness method : http://the-witness.net/news/2013/09/shadow-mapping-summary-part-1/
+
+     vec3 lShadowPosDDXVec3 = ddx_fine(lProjectedPos);
+     vec3 lShadowPosDDYVec3 = ddy_fine(lProjectedPos);          
+        
+     vec2 lReceiverPlaneDepthBiasVec2 = ComputeReceiverPlaneDepthBias(lShadowPosDDXVec3, lShadowPosDDYVec3);
+     // Static depth biasing to make up for incorrect fractional sampling on the shadow map grid
+     float fractionalSamplingError = 2 * dot(vec2(1.0f, 1.0f) * lRenderTargetUniforms.gShadowSizeVec4.zw, abs(lReceiverPlaneDepthBiasVec2));
+     lProjectedPos.z -= min(fractionalSamplingError, 0.01f);    
+     // clamp Z - for cases where a shadow receiver is just beyond the range (in shadow view space) of any shadow casters				
+     //lProjectedPos.z = min( lProjectedPos.z, 0.999999f );             
+     
+     return PCF_RPDB2( lPerMaterialUniforms, lUniforms, lProjectedPos, lReceiverPlaneDepthBiasVec2, lRenderTargetUniforms.gShadowSizeVec4, lfFilterRadius,lbHQ );
+#endif     
+}
+
+
+//-----------------------------------------------------------------------------
+///
+///     EnvBRDFApprox
+///
+///     @brief      EnvBRDFApprox
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+vec3 EnvBRDFApprox( vec3 SpecularColor, float Roughness, float NoV )
+{
+    // [ Lazarov 2013, "Getting More Physical in Call of Duty: Black Ops II" ]
+    // Adaptation to fit our G term.
+    const vec4 c0 = vec4( -1, -0.0275, -0.572, 0.022 );
+    const vec4 c1 = vec4( 1, 0.0425, 1.04, -0.04 );
+    vec4 r = Roughness * c0 + c1;
+    float a004 = min( r.x * r.x, exp2( -9.28 * NoV ) ) * r.x + r.y;
+    vec2 AB = vec2( -1.04, 1.04 ) * a004 + r.zw;
+
+    return SpecularColor * AB.x + AB.y;
+}
+
+
+//-----------------------------------------------------------------------------
+///
+///     PhongApprox
+///
+///     @brief      PhongApprox
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+float 
+PhongApprox( 
+    float Roughness, 
+    float RoL )
+{
+    //float a = Roughness * Roughness;			// 1 mul
+    //float a2 = a * a;						// 1 mul
+    //float rcp_a2 = rcp(a2);					// 1 rcp
+    float rcp_a2 = exp2( -6.88886882 * Roughness + 6.88886882 );
+    //float rcp_a2 = 1.0 / a2;					// 1 rcp
+
+    // Spherical Gaussian approximation: pow( x, n ) ~= exp( (n + 0.775) * (x - 1) )
+    // Phong: n = 0.5 / a2 - 0.5
+    // 0.5 / ln(2), 0.275 / ln(2)
+    vec2 c = vec2( 0.72134752, 0.25 ) * rcp_a2 + vec2( 0.39674113, 0.75 );	// 1 mad
+    return c.y * exp2( c.x * RoL - c.x );	// 2 mad, 1 exp2, 1 mul
+    // Total 7 instr
+}
+
+//-----------------------------------------------------------------------------
+///
+///     GetImageBasedReflectionLighting
+///
+///     @brief      GetImageBasedReflectionLighting
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+vec3 GetImageBasedReflectionLighting(
+    SAMPLER2DARG( lDualPMapBack ) ,
+    SAMPLER2DARG( lDualPMapFront ) ,
+    vec3 lReflectionVec3, 
+    float Roughness)
+{
+    vec3 ProjectedCaptureVector = lReflectionVec3;	
+
+    // Compute fractional mip from roughness
+    //float AbsoluteSpecularMip = ComputeReflectionCaptureMipFromRoughness(Roughness);
+    // Fetch from cubemap and convert to linear HDR
+
+    vec3 SpecularIBL = ReadDualParaboloidMap(  SAMPLER2DPARAM( lDualPMapBack ), 
+                                               SAMPLER2DPARAM( lDualPMapFront ), 
+                                               ProjectedCaptureVector,
+                                               int (min(Roughness, 0.99) * 7.0) );
+    return SpecularIBL;
+}
+
+
+
+STATIC_CONST float fLTDistortion     = 0.200000; // Translucency Distortion Scale Factor 
+STATIC_CONST float fLTScale          = 1.000000; // Scale Factor 
+STATIC_CONST float fLTPower          = 4.000000; // Power Factor
+STATIC_CONST float fLTAmbient        = 0.000000; // Minimum front and back translucency
+
+//-----------------------------------------------------------------------------
+///
+///     SubsurfaceScatter
+///
+///     @brief      SubsurfaceScatter
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+float 
+SubsurfaceScatter(
+    vec3   lViewDirVec3,
+    vec3   lNormalVec3,
+    vec3   lLightDirectionVec3,
+    float  lfSubsurfaceFactor ) 
+{
+    //float dot  = pow( saturate( dot( lViewDirVec3, -lLightDirectionVec3 ) ), fLTPower ) * fLTScale;
+
+    float lfTest = saturate( dot( lViewDirVec3, -lLightDirectionVec3 ) );
+    float lfDot  = pow( lfTest, fLTPower ) * fLTScale;
+    float lt   = (lfDot + fLTAmbient) * lfSubsurfaceFactor;
+
+    return lt;
+}
+
+STATIC_CONST float kfRimFactor = 0.5;
+
+
+//-----------------------------------------------------------------------------
+///
+///     ComputeLightColour
+///
+///     @brief      ComputeLightColour
+///
+///     @param      void
+///     @return     Nothing.
+///
+//-----------------------------------------------------------------------------
+vec3 
+ComputeLightColour( 
+    in CustomPerMaterialUniforms lPerMaterialUniforms,
+    in PerFrameUniforms         lPerFrameUniforms,
+    in CommonPerMeshUniforms    lMeshUniforms,
+    in vec3                     lLightDirectionVec3,
+    in vec3                     lPositionVec3,
+    in vec2                     lScreenPositionVec2,
+    in vec3                     lNormalVec3,
+    in vec3                     lInputColourVec3,
+    in mat3                     lUpMatrix,
+    in int                      liMaterialID,
+    in float                    lfMetallic,
+    in float                    lfRoughness,
+    in float                    lfSubsurfaceFactor,
+    in float                    lfNonMetalSpecularScale = 0.5 )
+{
+    vec3   lFinalColour = vec3(0.0);
+    vec3   lDiffuseColourVec3;
+    vec3   lSpecularColourVec3;
+    vec3   lViewDirVec3;
+    float  lfShadow      = 1.0;
+    float  lfNoV;
+    float  lfNoL;
+    vec3   lColourVec3 = lInputColourVec3;
+
+
+    vec3  lWorldUpVec3  = GetWorldUp( lPositionVec3, lMeshUniforms.gPlanetPositionVec4 );
+    float lfHeight      = dot( lWorldUpVec3, lNormalVec3 );
+
+    lViewDirVec3        = normalize( lPerFrameUniforms.gViewPositionVec3 - lPositionVec3.xyz );
+    
+    lfNoV = max( 0.0, dot( lNormalVec3, lViewDirVec3        ) );
+    lfNoL = max( 0.0, dot( lNormalVec3, lLightDirectionVec3 ) );
+
+
+   
+#ifdef _F48_WARPED_DIFFUSE_LIGHTING
+    lfNoL = max( 0.0, (dot( lNormalVec3, lLightDirectionVec3 ) + 1.0)*0.5 );    
+#endif   
+        //if( lfNoL > 0.0 )
+
+    vec3 lUp = GetWorldUp( lPerFrameUniforms.gViewPositionVec3, lMeshUniforms.gPlanetPositionVec4 );
+    vec3 lCross1 = normalize( cross( lUp, vec3( 0.0, 0.0, 1.0 ) ) );
+    vec3 lCross2 = normalize( cross( lUp, lCross1 ) );
+    lCross1 = normalize( cross( lUp, lCross2 ) );
+    vec3 lViewPos = lUp * lMeshUniforms.gPlanetPositionVec4.w;
+    vec3 lGroundPos = lWorldUpVec3 * lMeshUniforms.gPlanetPositionVec4.w;
+    vec3 lDir = ( lGroundPos - lViewPos ) * 0.0025;
+
+    vec2 lCloudTexCoords = vec2( dot( lDir, lCross1 ), dot( lDir, lCross2 ) ) * 0.5;
+    lCloudTexCoords += vec2( 0.5, 0.5 );
+
+    vec4 lOverlayValue = texture2D( lPerMaterialUniforms.gCloudShadowMap, lCloudTexCoords );
+
+    if ( (liMaterialID & D_NORECEIVESHADOW) == 0 )
+    {   
+        
+        lfShadow = ComputeShadowIntensity( lPerMaterialUniforms, lPerFrameUniforms, lMeshUniforms, lPositionVec3, lNormalVec3, lScreenPositionVec2, true );
+        lfShadow *= 1.0 - lOverlayValue.a * 0.75;
+    }
+
+    if ( (liMaterialID & D_HUESHIFT) != 0 )
+    {
+        lColourVec3 = RGBToHSV( lColourVec3 );
+        lColourVec3.r = lColourVec3.r - lOverlayValue.r;
+        lColourVec3.r = fract( lColourVec3.r );
+        lColourVec3.b = saturate( lColourVec3.b * ( 1.0 - lOverlayValue.g ) );
+        lColourVec3 = HSVToRGB( lColourVec3 );
+    }
+
+    
+    {
+        float DielectricSpecular = 0.08 * lfNonMetalSpecularScale;
+        
+        lDiffuseColourVec3  = lColourVec3 - (lColourVec3 * lfMetallic);	// 1 mad
+        lSpecularColourVec3 = (DielectricSpecular - (DielectricSpecular * lfMetallic)) + (lColourVec3 * lfMetallic);	// 2 mad
+    }
+
+    {
+        lSpecularColourVec3 = EnvBRDFApprox( lSpecularColourVec3, lfRoughness, lfNoV );
+    }
+
+    {
+        vec3   lLightColourVec3 = /*GammaCorrectInput*/ ( lMeshUniforms.gLightColourVec4.xyz ) * lMeshUniforms.gLightColourVec4.w;
+        vec3   lReflectionVec3     = reflect( -lViewDirVec3, lNormalVec3 );
+
+        float  lfRoL = max( 0.0, dot( lReflectionVec3,  lLightDirectionVec3 ) );
+
+        float lfSubSurface = 0.0;
+
+        #ifdef _F40_SUBSURFACE_MASK
+        {       
+            lfSubSurface  = SubsurfaceScatter( lViewDirVec3, lNormalVec3, lLightDirectionVec3, lfSubsurfaceFactor );   
+            lfSubSurface *= 0.2 + (lfShadow * 0.8);
+        }
+        #endif
+
+
+        lFinalColour += ((lfShadow * lfNoL ) + lfSubSurface) * lLightColourVec3 * (lDiffuseColourVec3 + lSpecularColourVec3 * PhongApprox( lfRoughness, lfRoL ) );  
+
+        #ifndef D_SPOTLIGHT
+        {
+                                   
+            vec3 lTransformedRelectionVec3 = MUL( lUpMatrix, lReflectionVec3 );
+            vec3 lTransformedNormalVec3    = MUL( lUpMatrix, lNormalVec3 );
+
+#ifndef D_PLATFORM_ORBIS
+            lTransformedRelectionVec3   = -lTransformedRelectionVec3;
+            lTransformedNormalVec3      = -lTransformedNormalVec3;
+#endif
+            vec3 SpecularIBL = GetImageBasedReflectionLighting( SAMPLER2DPARAM( lPerMaterialUniforms.gDualPMapBack ), 
+                                                                SAMPLER2DPARAM( lPerMaterialUniforms.gDualPMapFront ),
+                                                                lTransformedRelectionVec3, 
+                                                                lfRoughness);
+
+            lFinalColour += lfShadow * SpecularIBL * lSpecularColourVec3; 
+
+            vec3 AmbientIBL = GetImageBasedReflectionLighting( SAMPLER2DPARAM( lPerMaterialUniforms.gDualPMapBack ),
+                                                               SAMPLER2DPARAM( lPerMaterialUniforms.gDualPMapFront ),
+                                                               lTransformedNormalVec3,
+                                                               0.5 );
+                 
+            // Ambient
+            if ( ( liMaterialID & D_DISBALE_AMBIENT ) != 0 )            	
+            {
+            	// branching around the whole ambient section, lowers PS4 shader occupancy            	
+            	AmbientIBL = vec3(0.0);
+       		}
+       		
+            float lfBounceLight;
+            float lfSkyLight;
+
+            lfBounceLight     = saturate( ((-lfHeight)+ 1.0) * 0.5 );
+            lfBounceLight     = pow( lfBounceLight, 4.0 ) * 0.6;
+
+            lfSkyLight        = saturate( (lfHeight + 1.0) * 0.5 );
+            lfSkyLight        = pow( lfSkyLight, 2.0 ) * 0.5;
+
+            lFinalColour += AmbientIBL * lColourVec3 * ( lfBounceLight + lfSkyLight );
+            
+            
+            // Rim
+            {
+                float lfNormalDotCamera;
+
+                lfNormalDotCamera  = dot( lNormalVec3, -lViewDirVec3 );
+                lfNormalDotCamera  = max( lfNormalDotCamera + kfRimFactor, 0.0 ) / ( 1.0 + kfRimFactor );
+
+                lfNormalDotCamera *= 1.0 - (max( lfHeight, 0.0 ) + max( -lfHeight, 0.0 ));
+
+                lFinalColour += mix(lColourVec3, SpecularIBL, 0.5) * lfNormalDotCamera;
+            }
+                        
+            //lFinalColour = AmbientIBL;
+        }
+        #endif
+    }
+
+    return lFinalColour;
+}
+
+
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

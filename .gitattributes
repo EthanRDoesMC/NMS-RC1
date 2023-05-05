@@ -1,9 +1,12 @@
 # No Man's Sky gitattributes
 
 
-# This captures all shader files
-# most have a .h in the extension between shader and bin
+# Shaders
 *.SHADER*.BIN linguist-language=GLSL
 
-# all pipeline files begin with pipeline
+# Pipelines
 PIPELINE*.BIN linguist-language=XML
+
+# EXML
+*.exml linguist-language=XML
+*.EXML linguist-language=XML
